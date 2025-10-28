@@ -1,8 +1,9 @@
 #!/bin/env python
-import pandas as pd
-import uuid
-from datetime import datetime, timedelta, timezone
+
+from datetime import datetime
 from zoneinfo import ZoneInfo
+import csv
+import ics
 
 PST = ZoneInfo("America/Los_Angeles")
 
@@ -14,31 +15,30 @@ def createDatetime(date, time):
 # Returns an ICS VEVENT string
 """
 Parameters:
-        uid (str): Unique event ID.
-        dtstamp (str): DTSTAMP in ICS format (YYYYMMDDTHHMMSSZ or TZ-aware).
-        dtstart (str): DTSTART in ICS format.
-        dtend (str): DTEND in ICS format.
-        summary (str): Event title.
-        description (str): Event description.
+    uid (str): Unique event ID.
+    dtstamp (str): DTSTAMP in ICS format (YYYYMMDDTHHMMSSZ or TZ-aware).
+    dtstart (str): DTSTART in ICS format.
+    dtend (str): DTEND in ICS format.
+    summary (str): Event title.
+    description (str): Event description.
 """
 def createEvent(uid, dtstamp, dtstart, dtend, summary, desc):
-    event = f"""BEGIN:VEVENT
-UID:{uid}
-DTSTAMP:{dtstamp}
-DTSTART;TZID={PST}:{dtstart}
-DTEND;TZID={PST}:{dtend}
-SUMMARY:{summary}
-DESCRIPTION:{desc}
-END:VEVENT
-"""
-    
+    # Each line must be terminated by \r\n including the final line by iCalendar spec.
+    event = "".join(line + "\r\n" for line in [
+        f"BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART;TZID={PST}:{dtstart}",
+        f"DTEND;TZID={PST}:{dtend}",
+        f"SUMMARY:{summary}",
+        f"DESCRIPTION:{desc}",
+        f"END:VEVENT"
+    ])
     return event
 
-
 def main():
-    print("Hello World!")
-    inputFile = "SOC Fall Schedule.xlsx"
-    outputFile = "master.ics"
-
+    grcSchedulePath = "./ORTSOC GRC Fall 2025.csv"
+    secopsSchedulePath = "./ORTSOC SECOPS Fall 2025.csv"
+    outputPath = "./main.ics"
 if __name__ == "__main__":
     main()
