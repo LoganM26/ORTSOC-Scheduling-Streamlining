@@ -1,6 +1,6 @@
 #!/bin/env python
 
-from datetime import datetime
+from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
 import ics
 
@@ -48,6 +48,16 @@ def scheduleTimeToHumanTime(timestamp):
     ampm = "am" if (halfHourBlocks // 2) + 7 < 12 else "pm"
     return f"{day} {hour}:{minute}{ampm}"
 
+# Converts a schedule index to a datetime object for a specific week start
+def indexToDatetime(scheduleIndex, weekStart: date):
+    dayOffsets = [0, 1, 2, 3, 4]  # Monday=0 ... Friday=4
+    dayIndex = scheduleIndex // 24
+    halfHourBlocks = scheduleIndex % 24
+    hour = 7 + (halfHourBlocks // 2)
+    minute = 30 if halfHourBlocks % 2 else 0
+    dt = datetime.combine(weekStart + timedelta(days=dayOffsets[dayIndex]), time(hour, minute), PST)
+    return dt
+
 # Formats to ICS datetime
 def createDatetime(date, time):
     dt = datetime.combine(date, time, PST)
@@ -77,16 +87,74 @@ def createEvent(uid, dtstamp, dtstart, dtend, summary, desc):
     ])
     return event
 
+def generateICSEvents(schedule, weekStart: date, roleName: str):
+    events = []
+    students = set()
+    # Create the students set
+    for block in schedule:
+        students.update(block)
+    
+    # Timestamp creation time
+    dtstamp = datetime.now(PST).strftime("%Y%m%dT%H%M%S")
+
+    # Go through all students and conjoin adjacent shifts
+    for student in students:
+        startIdx = None
+        # Find adjacent shifts for this student
+        for i, block in enumerate(schedule):
+            if student in block:
+                if startIdx is None:
+                    startIdx = i # start a new shift
+            else:
+                if startIdx is not None:
+                    # End of shift
+                    dtstart = indexToDatetime(startIdx, weekStart).strftime("%Y%m%dT%H%M%S")
+                    dtend = (indexToDatetime(i, weekStart)).strftime("%Y%m%dT%H%M%S")
+                    uid = f"{student}-{roleName}-{startIdx}"
+                    event = createEvent(uid, dtstamp, dtstart, dtend, f"{student} ({roleName})", f"{roleName} shift for {student}")
+                    events.append(event)
+                    startIdx = None
+        if startIdx is not None:
+            # Edge case: handle shift ending at the last block
+            dtstart = indexToDatetime(startIdx, weekStart).strftime("%Y%m%dT%H%M%S")
+            dtend = (indexToDatetime(len(schedule) - 1, weekStart) + timedelta(minutes=30)).strftime("%Y%m%dT%H%M%S")
+            uid = f"{student}-{roleName}-{startIdx}"
+            event = createEvent(uid, dtstamp, dtstart, dtend, f"{student} ({roleName})", f"{roleName} shift for {student}")
+            events.append(event)
+
+    return events
+
+
+
 def main():
     grcSchedulePath = "./ORTSOC GRC Fall 2025.csv"
     secopsSchedulePath = "./ORTSOC SECOPS Fall 2025.csv"
     outputPath = "./main.ics"
+
+    weekStart = date(2025, 10, 27) # example date
+
+    # Generate schedules
     grcSchedule = parseSchedule(parseCSV(readTextFile(grcSchedulePath)))
     secopsSchedule = parseSchedule(parseCSV(readTextFile(secopsSchedulePath)))
 
-    # Print who was doing GRC and SECOPS during each 30 minute block
-    for i in range(5 * 12 * 2):
-        print(f"{scheduleTimeToHumanTime(i)}: GRC({", ".join(grcSchedule[i])}) SECOPS({", ".join(secopsSchedule[i])})")
+    # Generate events
+    grcEvents = generateICSEvents(grcSchedule, weekStart, "GRC")
+    secopsEvents = generateICSEvents(secopsSchedule, weekStart, "SECOPS")
+
+    # Example event
+    if grcEvents:
+        print("Example VEVENT:\n")
+        print(grcEvents[0])
+    
+    with open(outputPath, "w") as f:
+        f.write("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Generated Schedule//EN\r\n")
+        for event in grcEvents + secopsEvents:
+            f.write(event)
+        f.write("END:VCALENDAR\r\n")
+
+    print(f"ICS calendar written to {outputPath}")
+
+    
 
 if __name__ == "__main__":
     main()
