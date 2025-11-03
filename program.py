@@ -75,17 +75,28 @@ Parameters:
 """
 def createEvent(uid, dtstamp, dtstart, dtend, summary, desc):
     # Each line must be terminated by \r\n including the final line by iCalendar spec.
-    event = "".join(line + "\r\n" for line in [
-        f"BEGIN:VEVENT",
+    # event = "".join(line + "\r\n" for line in [
+    #     f"BEGIN:VEVENT",
+    #     f"UID:{uid}",
+    #     f"DTSTAMP:{dtstamp}",
+    #     f"DTSTART;TZID={PST}:{dtstart}",
+    #     f"DTEND;TZID={PST}:{dtend}",
+    #     f"SUMMARY:{summary}",
+    #     f"DESCRIPTION:{desc}",
+    #     f"END:VEVENT"
+    # ])
+    #return event
+    event = [
+        "BEGIN:VEVENT",
         f"UID:{uid}",
         f"DTSTAMP:{dtstamp}",
-        f"DTSTART;TZID={PST}:{dtstart}",
-        f"DTEND;TZID={PST}:{dtend}",
+        f"DTSTART;TZID=America/Los_Angeles:{dtstart}",
+        f"DTEND;TZID=America/Los_Angeles:{dtend}",
         f"SUMMARY:{summary}",
         f"DESCRIPTION:{desc}",
-        f"END:VEVENT"
-    ])
-    return event
+        "END:VEVENT"
+    ]
+    return "\n".join(event) + "\n"
 
 def generateICSEvents(schedule, weekStart: date, roleName: str):
     events = []
@@ -146,8 +157,8 @@ def main():
         print("Example VEVENT:\n")
         print(grcEvents[0])
     
-    with open(outputPath, "w") as f:
-        f.write("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Generated Schedule//EN\r\n")
+    with open(outputPath, "w", newline="\n") as f:
+        f.write("BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Generated Schedule//EN\n")
         for event in grcEvents + secopsEvents:
             f.write(event)
         f.write("END:VCALENDAR\r\n")
