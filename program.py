@@ -112,6 +112,8 @@ def createEvent(uid, dtstamp, dtstart, dtend, summary, desc):
     ]
     return "\n".join(event) + "\n"
 
+# for adding recurrance put this after DTEND line: RRULE:FREQ=WEEKLY;COUNT=10
+
 def generateICSEvents(schedule, weekStart: date, roleName: str):
     events = []
     students = set()
