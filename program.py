@@ -72,10 +72,14 @@ def scheduleTimeToHumanTime(timestamp):
 # Converts a schedule index to a datetime object for a specific week start
 def indexToDatetime(scheduleIndex, weekStart: date):
     dayOffsets = [0, 1, 2, 3, 4]  # Monday=0 ... Friday=4
-    dayIndex = scheduleIndex // 24
-    halfHourBlocks = scheduleIndex % 24
-    hour = 7 + (halfHourBlocks // 2)
+    dayIndex = scheduleIndex // 48
+    halfHourBlocks = scheduleIndex % 48
+    hour = (halfHourBlocks // 2)
     minute = 30 if halfHourBlocks % 2 else 0
+    # Edge case fix
+    if hour > 23:
+        hour = 23
+        minute = 59
     dt = datetime.combine(weekStart + timedelta(days=dayOffsets[dayIndex]), time(hour, minute), PST)
     return dt
 
@@ -95,18 +99,7 @@ Parameters:
     description (str): Event description.
 """
 def createEvent(uid, dtstamp, dtstart, dtend, summary, desc):
-    # Each line must be terminated by \r\n including the final line by iCalendar spec.
-    # event = "".join(line + "\r\n" for line in [
-    #     f"BEGIN:VEVENT",
-    #     f"UID:{uid}",
-    #     f"DTSTAMP:{dtstamp}",
-    #     f"DTSTART;TZID={PST}:{dtstart}",
-    #     f"DTEND;TZID={PST}:{dtend}",
-    #     f"SUMMARY:{summary}",
-    #     f"DESCRIPTION:{desc}",
-    #     f"END:VEVENT"
-    # ])
-    #return event
+    # Regular "\n" works fine for line delimeters
     event = [
         "BEGIN:VEVENT",
         f"UID:{uid}",
@@ -122,9 +115,13 @@ def createEvent(uid, dtstamp, dtstart, dtend, summary, desc):
 def generateICSEvents(schedule, weekStart: date, roleName: str):
     events = []
     students = set()
-    # Create the students set
+    # Gather all unique students
     for block in schedule:
         students.update(block)
+
+    # for i, block in enumerate(schedule):
+    #     if block:
+    #         print(f"Block {i} has: {block}")
     
     # Timestamp creation time
     dtstamp = datetime.now(PST).strftime("%Y%m%dT%H%M%S")
@@ -135,27 +132,55 @@ def generateICSEvents(schedule, weekStart: date, roleName: str):
         # Find adjacent shifts for this student
         for i, block in enumerate(schedule):
             if student in block:
+                # If currently not in a shift, start a new one
                 if startIdx is None:
-                    startIdx = i # start a new shift
-            else:
+                    startIdx = i
+                # Otherwise continue
+            else: # in a shift
+                # End shift if one is in progress next block does not have them scheduled
                 if startIdx is not None:
-                    # End of shift
                     dtstart = indexToDatetime(startIdx, weekStart).strftime("%Y%m%dT%H%M%S")
-                    dtend = (indexToDatetime(i, weekStart)).strftime("%Y%m%dT%H%M%S")
+                    dtend = (indexToDatetime(i - 1, weekStart) + timedelta(minutes=30)).strftime("%Y%m%dT%H%M%S")
                     uid = f"{student}-{roleName}-{startIdx}"
                     event = createEvent(uid, dtstamp, dtstart, dtend, f"{student} ({roleName})", f"{roleName} shift for {student}")
                     events.append(event)
                     startIdx = None
-        if startIdx is not None:
-            # Edge case: handle shift ending at the last block
-            dtstart = indexToDatetime(startIdx, weekStart).strftime("%Y%m%dT%H%M%S")
-            dtend = (indexToDatetime(len(schedule) - 1, weekStart) + timedelta(minutes=30)).strftime("%Y%m%dT%H%M%S")
-            uid = f"{student}-{roleName}-{startIdx}"
-            event = createEvent(uid, dtstamp, dtstart, dtend, f"{student} ({roleName})", f"{roleName} shift for {student}")
-            events.append(event)
 
     return events
 
+# Fixed to add timezone information
+def writeICalendar(outputPath, events):
+    vtimezone = """BEGIN:VTIMEZONE
+TZID:America/Los_Angeles
+BEGIN:STANDARD
+DTSTART:20231105T020000
+TZOFFSETFROM:-0700
+TZOFFSETTO:-0800
+TZNAME:PST
+END:STANDARD
+BEGIN:DAYLIGHT
+DTSTART:20240310T020000
+TZOFFSETFROM:-0800
+TZOFFSETTO:-0700
+TZNAME:PDT
+END:DAYLIGHT
+END:VTIMEZONE
+"""
+    with open(outputPath, "w") as f:
+        f.write("BEGIN:VCALENDAR\n")
+        f.write("VERSION:2.0\n")
+        f.write("PRODID:-//Generated Schedule//EN\n")
+        f.write(vtimezone)
+        for event in events:
+            f.write(event)
+        f.write("END:VCALENDAR\n")
+
+
+
+# Other notes:
+# - Start date is manually set in code, add user input functionality
+# - Events dont currently repeat, set for one day based on weekStart
+# - Make individual schedules, prob just a flag for generateICSEvents function then call writeICalendar inside
 
 
 def main():
@@ -163,15 +188,23 @@ def main():
     secopsSchedulePath = "./ORTSOC SECOPS Fall 2025.csv"
     outputPath = "./main.ics"
 
-    weekStart = date(2025, 10, 27) # example date
+    weekStart = date(2025, 11, 3) # Must be a Monday
+    # use user input for start date?
 
     # Generate schedules
     grcSchedule = parseSchedule(parseCSV(readTextFile(grcSchedulePath)))
     secopsSchedule = parseSchedule(parseCSV(readTextFile(secopsSchedulePath)))
 
     # Print who was doing GRC and SECOPS during each 30 minute block
-    for i in range(48 * 7):
-        print(f"{scheduleTimeToHumanTime(i)}: GRC({", ".join(grcSchedule[i])}) SECOPS({", ".join(secopsSchedule[i])})")
+    # for i in range(48 * 7):
+    #     print(f"{scheduleTimeToHumanTime(i)}: GRC({", ".join(grcSchedule[i])}) SECOPS({", ".join(secopsSchedule[i])})")
+    
+    grcEvents = generateICSEvents(grcSchedule, weekStart, "GRC")
+    secopsEvents = generateICSEvents(secopsSchedule, weekStart, "SECOPS")
+
+    writeICalendar(outputPath, grcEvents + secopsEvents)
+
+    print(f"ICS calendar written to {outputPath}")
 
 if __name__ == "__main__":
     main()
