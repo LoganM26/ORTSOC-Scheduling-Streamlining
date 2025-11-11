@@ -203,8 +203,15 @@ def main():
     secopsSchedule = parseSchedule(parseCSV(readTextFile(secopsSchedulePath)))
 
     # Print who was doing GRC and SECOPS during each 30 minute block
-    for i in range(48 * 7):
-        print(f"{scheduleTimeToHumanTime(i)}: GRC({", ".join(grcSchedule[i])}) SECOPS({", ".join(secopsSchedule[i])})")
+    # for i in range(48 * 7):
+    #     print(f"{scheduleTimeToHumanTime(i)}: GRC({", ".join(grcSchedule[i])}) SECOPS({", ".join(secopsSchedule[i])})")
+    
+    grcEvents = generateICSEvents(grcSchedule, weekStart, "GRC")
+    secopsEvents = generateICSEvents(secopsSchedule, weekStart, "SECOPS")
+
+    writeICalendar(outputPath, grcEvents + secopsEvents)
+
+    print(f"ICS calendar written to {outputPath}")
 
 if __name__ == "__main__":
     main()
