@@ -98,7 +98,7 @@ Parameters:
     summary (str): Event title.
     description (str): Event description.
 """
-def createEvent(uid, dtstamp, dtstart, dtend, summary, desc):
+def createEvent(uid, dtstamp, dtstart, dtend, summary, desc, roleName):
     # Regular "\n" works fine for line delimeters
     event = [
         "BEGIN:VEVENT",
@@ -108,6 +108,8 @@ def createEvent(uid, dtstamp, dtstart, dtend, summary, desc):
         f"DTEND;TZID=America/Los_Angeles:{dtend}",
         f"SUMMARY:{summary}",
         f"DESCRIPTION:{desc}",
+        f"CATEGORIES:{roleName}",
+        "RRULE:FREQ=WEEKLY;COUNT=10",
         "END:VEVENT"
     ]
     return "\n".join(event) + "\n"
@@ -144,7 +146,7 @@ def generateICSEvents(schedule, weekStart: date, roleName: str):
                     dtstart = indexToDatetime(startIdx, weekStart).strftime("%Y%m%dT%H%M%S")
                     dtend = (indexToDatetime(i - 1, weekStart) + timedelta(minutes=30)).strftime("%Y%m%dT%H%M%S")
                     uid = f"{student}-{roleName}-{startIdx}"
-                    event = createEvent(uid, dtstamp, dtstart, dtend, f"{student} ({roleName})", f"{roleName} shift for {student}")
+                    event = createEvent(uid, dtstamp, dtstart, dtend, f"{student} ({roleName})", f"{roleName} shift for {student}", roleName)
                     events.append(event)
                     startIdx = None
 
@@ -152,22 +154,25 @@ def generateICSEvents(schedule, weekStart: date, roleName: str):
 
 # Fixed to add timezone information
 def writeICalendar(outputPath, events):
-    vtimezone = """BEGIN:VTIMEZONE
-TZID:America/Los_Angeles
-BEGIN:STANDARD
-DTSTART:20231105T020000
-TZOFFSETFROM:-0700
-TZOFFSETTO:-0800
-TZNAME:PST
-END:STANDARD
-BEGIN:DAYLIGHT
-DTSTART:20240310T020000
-TZOFFSETFROM:-0800
-TZOFFSETTO:-0700
-TZNAME:PDT
-END:DAYLIGHT
-END:VTIMEZONE
-"""
+    vtimezone = [
+        "BEGIN:VTIMEZONE",
+        "TZID:America/Los_Angeles",
+        "BEGIN:STANDARD",
+        "DTSTART:20231105T020000",
+        "TZOFFSETFROM:-0700",
+        "TZOFFSETTO:-0800",
+        "TZNAME:PST",
+        "END:STANDARD",
+        "BEGIN:DAYLIGHT",
+        "DTSTART:20240310T020000",
+        "TZOFFSETFROM:-0800",
+        "TZOFFSETTO:-0700",
+        "TZNAME:PDT",
+        "END:DAYLIGHT",
+        "END:VTIMEZONE"
+    ]
+    vtimezone = "\n".join(vtimezone) + "\n"
+
     with open(outputPath, "w") as f:
         f.write("BEGIN:VCALENDAR\n")
         f.write("VERSION:2.0\n")
@@ -181,7 +186,7 @@ END:VTIMEZONE
 
 # Other notes:
 # - Start date is manually set in code, add user input functionality
-# - Events dont currently repeat, set for one day based on weekStart
+# - Events current repeat for 10 wks, technically an asummption (fix w/ user input or global var)
 # - Make individual schedules, prob just a flag for generateICSEvents function then call writeICalendar inside
 
 
