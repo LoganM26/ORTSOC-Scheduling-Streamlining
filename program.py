@@ -11,8 +11,8 @@ def createDatetime(date, time):
     dt = datetime.combine(date, time, PST)
     return dt.strftime("%Y%m%dT%H%M%S")
 
-# Returns an ICS VEVENT string
 """
+# Returns an ICS VEVENT string
 Parameters:
         uid (str): Unique event ID.
         dtstamp (str): DTSTAMP in ICS format (YYYYMMDDTHHMMSSZ or TZ-aware).
