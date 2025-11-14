@@ -1,217 +1,290 @@
-#!/bin/env python
+#!/bin/env python3
 
-from datetime import datetime, date, time, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 import csv
 import io
+import os
+import uuid
 
-PST = ZoneInfo("America/Los_Angeles")
+# Sets the date on which shifts start (Must be a Monday).
+START_DATE = datetime(2025, 9, 15)
+# Sets how many weeks the schedule should repeat for before ending for the term.
+WEEKS_IN_TERM = 10
+# Sets the path of the GRC schedule in CSV format.
+GRC_SCHEDULE_PATH = "./ORTSOC GRC Fall 2025.csv"
+# Sets the path of the SECOPS schedule in CSV format.
+SECOPS_SCHEDULE_PATH = "./ORTSOC SECOPS Fall 2025.csv"
+# Sets the path of the main ICS file.
+MAIN_ICS_PATH = "./main.ics"
+# Sets the path of the folder containing the individual ICS files.
+INDIVIDUAL_ICS_FOLDER = "./individual"
 
-# Reads a text file into a string
+# readTextFile: Reads the contents of a file as a UTF-8 string.
+# input str filePath: A string file path. Can be a relative or rooted file path.
+# return str fileContents: The full contents of the target file.
 def readTextFile(filePath):
-    with open(filePath, "r") as file:
-        return file.read()
+    filePath = os.path.realpath(os.path.expanduser(filePath))
+    with open(filePath, "rb") as file:
+        return file.read().decode(encoding="UTF-8")
 
-# Parses the raw contents of a CSV file into a 2d array of strings
-def parseCSV(rawCsv):
-    stream = io.StringIO(rawCsv)
+# writeTextFile: Writes a string into a file in the UTF-8 format.
+# input str filePath: A string file path. Can be a relative or rooted file path.
+# input str fileContents: The full contents of the target file.
+# return None
+def writeTextFile(filePath, fileContents: str):
+    filePath = os.path.realpath(os.path.expanduser(filePath))
+    with open(filePath, "wb") as file:
+        return file.write(fileContents.encode(encoding="UTF-8"))
+
+# parseCSV: Parses the contents of a CSV file from a string into a 2D array of strings.
+# input str rawCSV: The entire contents of the CSV file as a string.
+# return list[list[str]] data: A 2D array of strings containing the data from the CSV. Can be accessed with data[x][y].
+def parseCSV(rawCSV):
+    stream = io.StringIO(rawCSV)
     reader = csv.reader(stream)
     rows = [row for row in reader]
     return [list(col) for col in zip(*rows)]
 
-# Parses a 2d array of strings and returns a list of lists where each sublist corrisponds to a 30 minute block.
-# Sublists contain the names of all the people scheduled during that 30 minute block.
-# The larger containing list is split every 30 minutes 12am to 12am Monday to Sunday.
-# That means to check if James is scheduled for 5:00pm on Tuesday you would run:
-# print("James" in schedule[48 + 34])
-# Because there are 48 times blocks in Monday 34 more pass between 12am and 5pm on Tuesday.
-#
-# Makes the following assumptions about the input schedule:
-# There will be a padding row at index 0
-# There will be a padding column at index 0
-# There will be numbers between the data for each day
-# ORTSOC opens at 7:00am
-# ORTSOC is open Monday through Friday and closed on weekends
-# ORTSOC has consistent hours each day of the week
-# Each block is 30 minutes in length
-def parseSchedule(parsedCsv):
-    # Remove first column which contains days of the week not real data.
-    parsedCsv = parsedCsv[1:]
-    # Remove first row which contains start/end times not real data.
-    parsedCsv = [row[1:] for row in parsedCsv ]
-    # Remove " (8:45)" from Jamie's shifts which are labled "Jamie (8:45)" for some reason.
-    parsedCsv = [[ value.replace(" (8:45)", "") for value in row ] for row in parsedCsv]
-    # Replace all the "ORTSOC Project (428)" values with "" so they are ignored.
-    parsedCsv = [[ "" if "ORTSOC" in value else value for value in row ] for row in parsedCsv]
+# removeNoteShiftNote: Removes the note from an ORTSOC shift by locating the " (" marker.
+# Notes look like this "Finlay Christ (Make up shift from 11/5)"
+# If " (" is not found it simply returns the original string unchanged.
+# input str text: The original input string.
+# return str textTrimmed: The output after trimming.
+def removeNoteShiftNote(text):
+    index = text.find(" (")
+    if index != -1:
+        return text[:index]
+    else:
+        return text
 
-    output = [[] for _ in range(48 * 7)]
-    ortsoc_open_time = 14 # ORTSOC schedule starts at 7:00am 
-    for x in range(len(parsedCsv)):
-        day = 0
-        for y in range(len(parsedCsv[x])):
-            if all([ c.isdigit() for c in parsedCsv[x][y] ]) and len(parsedCsv[x][y]) > 0:
-                day += 1
-                if day == 5:
-                    break
-            elif parsedCsv[x][y] != "":
-                output[(day * 48) + ortsoc_open_time + x].append(parsedCsv[x][y])
+# timeIndexToTimeDelta: Converts a time index into a python timedelta.
+# input int timeIndex: The time in time index format.
+# return timedelta timeDelta: The time in timedelta format.
+def timeIndexToTimeDelta(timeIndex):
+    return timedelta(minutes=(timeIndex * 30))
+
+# timeDeltaToTimeIndex: Converts a python timedelta into a time index.
+# input timedelta timeDelta: The time in timedelta format.
+# return int timeIndex: The time in time index format.
+def timeDeltaToTimeIndex(timeDelta):
+    if timeDelta.seconds % 1800 != 0:
+        raise Exception("timeDelta was not aligned to a 30 minute block.")
+    return ((timeDelta.days % 7) * 48) + (timeDelta.seconds // 1800)
+
+# timeDeltaToHumanTime: Converts a python timedelta into a human readable string.
+# The format looks like "Tuesday 07:30AM".
+# input timedelta timeDelta: The time in timedelta format.
+# return str humanTime: The time in human readable format.
+def timeDeltaToHumanTime(timeDelta):
+    baseMonday = datetime(1970, 1, 5)
+    return (baseMonday + timeDelta).strftime("%A %I:%M%p")
+
+# humanHourToTimeDelta: Converts a human readable hour into a python timedelta.
+# The format looks like "15:30".
+# input str humanHour: The time in human readable 24 hour format.
+# return timedelta timeDelta: The time in python timedelta format.
+def humanHourToTimeDelta(humanHour):
+    dateTime = datetime.strptime(humanHour, "%H:%M")
+    return timedelta(hours=dateTime.hour, minutes=dateTime.minute)
+
+# dateTimeToICSDateTime: Converts a python datetime into ICS datetime format.
+# The format looks like "America/Los_Angeles:20250105T060000Z".
+# input datetime dateTime: The time in python datetime format.
+# return str icsDateTime: The time in ICS date time format.
+def dateTimeToICSDateTime(dateTime):
+    return "TZID=America/Los_Angeles:" + dateTime.strftime("%Y%m%dT%H%M%S")
+
+# timeIndexToHumanTime: A shorthand for timeDeltaToHumanTime(timeIndexToTimeDelta(timeIndex)).
+# input int timeIndex: The time in time index format.
+# input timedelta timeDelta: The time in timedelta format.
+# return str humanTime: The time in human readable format.
+def timeIndexToHumanTime(timeIndex):
+    return timeDeltaToHumanTime(timeIndexToTimeDelta(timeIndex))
+
+# parseSchedulePhase1:
+# Parses a raw ORTSOC schedule spreadsheet into a list of who was working during each time block.
+# Time blocks are each 30 minutes starting at 12am on Monday and going until 11:30pm on Sunday.
+#
+# input list[list[str]] rawSpreadsheet:
+# The raw spreadsheet in parsed CSV format unchanged from it's original form.
+#
+# return list[list[str]] schedule:
+# A list with one element per 30 minute time block starting at 12am on Monday and going until 11:30pm on Sunday.
+# Each element is another list of strings containing the names of all the people scheduled during that block.
+#
+# Makes the following assumptions:
+# There will be times or time ranges in row 0
+# There will be a padding in column 0
+# There will be an integer in column 1 between the data for each day of the week.
+# ORTSOC schedule begins on Monday
+# ORTSOC has consistent hours every day of the week.
+# Each block is 30 minutes in length
+def parseSchedulePhase1(rawSpreadsheet):
+    # Read when ORTSOC opens from cell (1, 0)
+    ortsocOpenTime = timeDeltaToTimeIndex(humanHourToTimeDelta(rawSpreadsheet[1][0].split()[0]))
+    # Prepare to read data by removing the first column which contains days of the week not real data.
+    rawSpreadsheet = rawSpreadsheet[1:]
+    # Prepare to read data by removing the first row which contains start/end times not real data.
+    rawSpreadsheet = [row[1:] for row in rawSpreadsheet ]
+    # Remove all shifts where the name contains "ORTSOC" as these are just markers for the ORTSOC 428 and 424 classes.
+    rawSpreadsheet = [[ "" if "ORTSOC" in value else value for value in row ] for row in rawSpreadsheet]
+    # Remove text in parenthesis so "Jamie (8:45)" becomes just "Jamie".
+    rawSpreadsheet = [[ removeNoteShiftNote(value) for value in row ] for row in rawSpreadsheet]
+
+    # Output should have 2 * 24 * 7 = 336 time blocks to account for all the 30 minute time blocks in a week. 
+    output = [[] for _ in range(336)]
+    day = 0
+    for y in range(len(rawSpreadsheet[0])):
+        if all([ c.isdigit() for c in rawSpreadsheet[0][y] ]) and len(rawSpreadsheet[0][y]) > 0:
+            day += 1
+            if day >= 5:
+                break
+            else:
+                continue
+        for x in range(len(rawSpreadsheet)):
+            if rawSpreadsheet[x][y] != "":
+                output[(day * 48) + ortsocOpenTime + x].append(rawSpreadsheet[x][y])
     return output
 
-# Converts an integer index within the schedule array into a human readable time.
-# Please don't ask me to document all this integer arithmetic (just trust that it works).
-def scheduleTimeToHumanTime(timestamp):
-    days = [ "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" ]
-    timestamp = timestamp % (48 * 7)
-    day = days[timestamp // 48]
-    halfHourBlocks = timestamp % 48
-    hour = (((halfHourBlocks // 2) - 1) % 12) + 1
-    minute = "00" if (halfHourBlocks % 2) == 0 else "30"
-    ampm = "am" if (halfHourBlocks // 2) < 12 else "pm"
-    return f"{day} {hour}:{minute}{ampm}"
+# Shift: A class for storing data about a shift at ORTSOC
+# field str name: The name of the person who's shift this is.
+# field int startTime: The time index when this shift begins.
+# field int endTime: The time index when this shift ends.
+# field str track: Either "GRC" or "SECOPS".
+class Shift:
+    def __init__(self, name, track, startTime, endTime):
+        self.name = name
+        self.track = track
+        self.startTime = startTime
+        self.endTime = endTime
 
-# Converts a schedule index to a datetime object for a specific week start
-def indexToDatetime(scheduleIndex, weekStart: date):
-    dayOffsets = [0, 1, 2, 3, 4]  # Monday=0 ... Friday=4
-    dayIndex = scheduleIndex // 48
-    halfHourBlocks = scheduleIndex % 48
-    hour = (halfHourBlocks // 2)
-    minute = 30 if halfHourBlocks % 2 else 0
-    # Edge case fix
-    if hour > 23:
-        hour = 23
-        minute = 59
-    dt = datetime.combine(weekStart + timedelta(days=dayOffsets[dayIndex]), time(hour, minute), PST)
-    return dt
+# parseSchedulePhase2:
+# Parses a phase 1 schedule into a list of instances of the Shift class.
+#
+# input list[list[str]] phase1Schedule:
+# A list with one element per 30 minute time block starting at 12am on Monday and going until 11:30pm on Sunday.
+# Each element is another list of strings containing the names of all the people scheduled during that block.
+#
+# return list[Shift] schedule:
+# A list containing all of the shifts on the schedule.
+def parseSchedulePhase2(phase1Schedule, track):
+    output = []
+    shiftsLastBlock = {}
+    shiftsThisBlock = {}
+    for i in range(len(phase1Schedule)):
+        for name in phase1Schedule[i]:
+            if name in shiftsLastBlock:
+                shiftsLastBlock[name].endTime = i + 1
+                shiftsThisBlock[name] = shiftsLastBlock[name]
+                del shiftsLastBlock[name]
+            else:
+                shiftsThisBlock[name] = Shift(name, track, i, i + 1)
+        output.extend(shiftsLastBlock.values())
+        shiftsLastBlock = shiftsThisBlock
+        shiftsThisBlock = {}
+    return output
 
-# Formats to ICS datetime
-def createDatetime(date, time):
-    dt = datetime.combine(date, time, PST)
-    return dt.strftime("%Y%m%dT%H%M%S")
-
-"""
-# Returns an ICS VEVENT string
-Parameters:
-    uid (str): Unique event ID.
-    dtstamp (str): DTSTAMP in ICS format (YYYYMMDDTHHMMSSZ or TZ-aware).
-    dtstart (str): DTSTART in ICS format.
-    dtend (str): DTEND in ICS format.
-    summary (str): Event title.
-    description (str): Event description.
-"""
-def createEvent(uid, dtstamp, dtstart, dtend, summary, desc, roleName):
-    # Regular "\n" works fine for line delimeters
-    event = [
-        "BEGIN:VEVENT",
+# createICSEvent: Builds an ICS vevent from the given input.
+# input str title: The title of the vevent.
+# input str description: The description of the vevent.
+# input datetime startDateTime: The starting date and time of the vevent.
+# input datetime endDateTime: The ending date and time of the vevent.
+# input str rrule: Optional repeat rule in string format. Set to None if undesired.
+# return str icsEvent: The created vevent in proper ICS format.
+def createICSEvent(title, description, startDateTime, endDateTime, rrule=None):
+    # Use a random uuid as the vevent uid so it's globally unique.
+    uid = str(uuid.uuid4())
+    dtstamp = dateTimeToICSDateTime(datetime.now())
+    dtstart = dateTimeToICSDateTime(startDateTime)
+    dtend = dateTimeToICSDateTime(endDateTime)
+    lines = [
+        f"BEGIN:VEVENT",
         f"UID:{uid}",
         f"DTSTAMP:{dtstamp}",
-        f"DTSTART;TZID=America/Los_Angeles:{dtstart}",
-        f"DTEND;TZID=America/Los_Angeles:{dtend}",
-        f"SUMMARY:{summary}",
-        f"DESCRIPTION:{desc}",
-        f"CATEGORIES:{roleName}",
-        "RRULE:FREQ=WEEKLY;COUNT=10",
-        "END:VEVENT"
+        f"DTSTART;{dtstart}",
+        f"DTEND;{dtend}{"\nRRULE:" + rrule if rrule != None else ""}",
+        f"SUMMARY:{title}",
+        f"DESCRIPTION:{description}",
+        f"END:VEVENT"
     ]
-    return "\n".join(event) + "\n"
+    # Lines must be split with "\n".
+    return "".join([line + "\n" for line in lines ])
 
-# for adding recurrance put this after DTEND line: RRULE:FREQ=WEEKLY;COUNT=10
-
-def generateICSEvents(schedule, weekStart: date, roleName: str):
-    events = []
-    students = set()
-    # Gather all unique students
-    for block in schedule:
-        students.update(block)
-
-    # for i, block in enumerate(schedule):
-    #     if block:
-    #         print(f"Block {i} has: {block}")
-    
-    # Timestamp creation time
-    dtstamp = datetime.now(PST).strftime("%Y%m%dT%H%M%S")
-
-    # Go through all students and conjoin adjacent shifts
-    for student in students:
-        startIdx = None
-        # Find adjacent shifts for this student
-        for i, block in enumerate(schedule):
-            if student in block:
-                # If currently not in a shift, start a new one
-                if startIdx is None:
-                    startIdx = i
-                # Otherwise continue
-            else: # in a shift
-                # End shift if one is in progress next block does not have them scheduled
-                if startIdx is not None:
-                    dtstart = indexToDatetime(startIdx, weekStart).strftime("%Y%m%dT%H%M%S")
-                    dtend = (indexToDatetime(i - 1, weekStart) + timedelta(minutes=30)).strftime("%Y%m%dT%H%M%S")
-                    uid = f"{student}-{roleName}-{startIdx}"
-                    event = createEvent(uid, dtstamp, dtstart, dtend, f"{student} ({roleName})", f"{roleName} shift for {student}", roleName)
-                    events.append(event)
-                    startIdx = None
-
-    return events
-
-# Fixed to add timezone information
-def writeICalendar(outputPath, events):
-    vtimezone = [
-        "BEGIN:VTIMEZONE",
-        "TZID:America/Los_Angeles",
-        "BEGIN:STANDARD",
-        "DTSTART:20231105T020000",
-        "TZOFFSETFROM:-0700",
-        "TZOFFSETTO:-0800",
-        "TZNAME:PST",
-        "END:STANDARD",
-        "BEGIN:DAYLIGHT",
-        "DTSTART:20240310T020000",
-        "TZOFFSETFROM:-0800",
-        "TZOFFSETTO:-0700",
-        "TZNAME:PDT",
-        "END:DAYLIGHT",
-        "END:VTIMEZONE"
+# createICSVtimezone: Builds an ICS vtimezone for PST.
+# return str icsTimezone: The created vtimezone in proper ICS format.
+def createICSVtimezone():
+    lines = [
+        f"BEGIN:VTIMEZONE",
+        f"TZID:America/Los_Angeles",
+        f"BEGIN:STANDARD",
+        f"DTSTART:20231105T020000",
+        f"TZOFFSETFROM:-0700",
+        f"TZOFFSETTO:-0800",
+        f"TZNAME:PST",
+        f"END:STANDARD",
+        f"BEGIN:DAYLIGHT",
+        f"DTSTART:20240310T020000",
+        f"TZOFFSETFROM:-0800",
+        f"TZOFFSETTO:-0700",
+        f"TZNAME:PDT",
+        f"END:DAYLIGHT",
+        f"END:VTIMEZONE"
     ]
-    vtimezone = "\n".join(vtimezone) + "\n"
+    # Lines must be split with "\n".
+    return "".join([line + "\n" for line in lines ])
 
-    with open(outputPath, "w") as f:
-        f.write("BEGIN:VCALENDAR\n")
-        f.write("VERSION:2.0\n")
-        f.write("PRODID:-//Generated Schedule//EN\n")
-        f.write(vtimezone)
-        for event in events:
-            f.write(event)
-        f.write("END:VCALENDAR\n")
+# createICSCalendar: Builds an ICS calendar by wrapping the provided components.
+# Components can be vevents, vtimezones, and more.
+# input list[str] components: The components of this calendar.
+# return str icsCalendar: The created calendar in proper ICS format.
+def createICSCalendar(components):
+    headerLines = [
+        f"BEGIN:VCALENDAR",
+        f"VERSION:2.0",
+        f"PRODID:-//ORTSOC//ORTSOC-Scheduling-Streamlining//EN"
+    ]
+    header = "".join([line + "\n" for line in headerLines ])
+    footerLines = [
+        f"END:VCALENDAR"
+    ]
+    footer = "".join([line + "\n" for line in footerLines ])
+    componentsPayload = "".join(components)
+    return header + componentsPayload + footer
 
-
+# scheduleToICSCalendar: Builds an ICS calendar out of the ORTSOC schedule.
+# Optionally filters the ICS to only include shifts for a target person by their name.
+# input list[Shift] schedule: An ORTSOC schedule as returned by parseSchedulePhase2.
+# return string icsCalendar: A complete ICS calendar ready to be saved to a text file.
+def scheduleToICSCalendar(schedule, targetName=None):
+    components = []
+    components.append(createICSVtimezone())
+    for shift in schedule:
+        if targetName != None and shift.name.lower() != targetName.lower():
+            continue
+        title = f"{shift.name} (ORTSOC {shift.track})"
+        description = f"{shift.name} working {shift.track} at ORTSOC from {timeIndexToHumanTime(shift.startTime)} to {timeIndexToHumanTime(shift.endTime)}."
+        startDateTime = START_DATE + timeIndexToTimeDelta(shift.startTime)
+        endDateTime = START_DATE + timeIndexToTimeDelta(shift.endTime)
+        components.append(createICSEvent(title, description, startDateTime, endDateTime, "FREQ=WEEKLY;COUNT=10"))
+    return createICSCalendar(components)
 
 # Other notes:
-# - Start date is manually set in code, add user input functionality
-# - Events current repeat for 10 wks, technically an asummption (fix w/ user input or global var)
-# - Make individual schedules, prob just a flag for generateICSEvents function then call writeICalendar inside
-
-
+# - Start date is manually set in code, add user input functionality (todo)
+# - Events current repeat for 10 wks, technically an asummption (fix w/ user input or global var) (done)
+# - Make individual schedules, prob just a flag for generateICSEvents function then call writeICalendar inside (done)
 def main():
-    grcSchedulePath = "./ORTSOC GRC Fall 2025.csv"
-    secopsSchedulePath = "./ORTSOC SECOPS Fall 2025.csv"
-    outputPath = "./main.ics"
-
-    weekStart = date(2025, 11, 3) # Must be a Monday
-    # use user input for start date?
-
-    # Generate schedules
-    grcSchedule = parseSchedule(parseCSV(readTextFile(grcSchedulePath)))
-    secopsSchedule = parseSchedule(parseCSV(readTextFile(secopsSchedulePath)))
-
-    # Print who was doing GRC and SECOPS during each 30 minute block
-    # for i in range(48 * 7):
-    #     print(f"{scheduleTimeToHumanTime(i)}: GRC({", ".join(grcSchedule[i])}) SECOPS({", ".join(secopsSchedule[i])})")
-    
-    grcEvents = generateICSEvents(grcSchedule, weekStart, "GRC")
-    secopsEvents = generateICSEvents(secopsSchedule, weekStart, "SECOPS")
-
-    writeICalendar(outputPath, grcEvents + secopsEvents)
-
-    print(f"ICS calendar written to {outputPath}")
-
+    grcScheduleCSV = parseCSV(readTextFile(GRC_SCHEDULE_PATH))
+    grcSchedule = parseSchedulePhase2(parseSchedulePhase1(grcScheduleCSV), "GRC")
+    secopsScheduleCSV = parseCSV(readTextFile(SECOPS_SCHEDULE_PATH))
+    secopsSchedule = parseSchedulePhase2(parseSchedulePhase1(secopsScheduleCSV), "SECOPS")
+    schedule = grcSchedule + secopsSchedule
+    mainIcs = scheduleToICSCalendar(schedule)
+    writeTextFile(MAIN_ICS_PATH, mainIcs)
+    os.makedirs(INDIVIDUAL_ICS_FOLDER, exist_ok=True)
+    names = set([ shift.name for shift in schedule ])
+    for name in names:
+        individualIcsPath = os.path.join(INDIVIDUAL_ICS_FOLDER, name + ".ics")
+        individualIcs = scheduleToICSCalendar(schedule, name)
+        writeTextFile(individualIcsPath, individualIcs)
 if __name__ == "__main__":
     main()
