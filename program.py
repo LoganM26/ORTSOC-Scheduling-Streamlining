@@ -103,21 +103,17 @@ def timeIndexToHumanTime(timeIndex: int) -> str:
 # parseSchedulePhase1:
 # Parses a raw ORTSOC schedule spreadsheet into a list of who was working during each time block.
 # Time blocks are each 30 minutes starting at 12am on Monday and going until 11:30pm on Sunday.
-#
-# input list[list[str]] rawSpreadsheet:
-# The raw spreadsheet in parsed CSV format unchanged from it's original form.
-#
-# return list[list[str]] schedule:
-# A list with one element per 30 minute time block starting at 12am on Monday and going until 11:30pm on Sunday.
+# input list[list[str]] rawSpreadsheet: The raw spreadsheet in parsed CSV format unchanged from it's original form.
+# return list[list[str]] schedule: A list with one element per 30 minute time block starting at 12am on Monday and going until 11:30pm on Sunday.
 # Each element is another list of strings containing the names of all the people scheduled during that block.
 #
 # Makes the following assumptions:
-# There will be times or time ranges in row 0
-# There will be a padding in column 0
+# There will be times or time ranges in row 0.
+# There will be a padding in column 0.
 # There will be an integer in column 1 between the data for each day of the week.
-# ORTSOC schedule begins on Monday
+# ORTSOC schedule begins on Monday.
 # ORTSOC has consistent hours every day of the week.
-# Each block is 30 minutes in length
+# Each block is 30 minutes in length.
 def parseSchedulePhase1(rawSpreadsheet: list[list[str]]) -> list[list[str]]:
     # Read when ORTSOC opens from cell (1, 0)
     ortsocOpenTime = timeDeltaToTimeIndex(humanHourToTimeDelta(rawSpreadsheet[1][0].split()[0]))
@@ -159,15 +155,10 @@ class Shift:
 
 # parseSchedulePhase2:
 # Parses a phase 1 schedule into a list of instances of the Shift class.
-#
-# input list[list[str]] phase1Schedule:
-# A list with one element per 30 minute time block starting at 12am on Monday and going until 11:30pm on Sunday.
+# input list[list[str]] phase1Schedule: A list with one element per 30 minute time block starting at 12am on Monday and going until 11:30pm on Sunday.
 # Each element is another list of strings containing the names of all the people scheduled during that block.
-#
 # input str track: Either "GRC" or "SECOPS".
-#
-# return list[Shift] schedule:
-# A list containing all of the shifts on the schedule.
+# return list[Shift] schedule: A list containing all of the shifts on the schedule.
 def parseSchedulePhase2(phase1Schedule: list[list[str]], track: str) -> list[Shift]:
     output = []
     shiftsLastBlock = {}
@@ -279,9 +270,8 @@ def main() -> None:
     args = sys.argv[1:]
     # If there is only one arg and it's asking for help then print the help menu.
     if len(args) == 1:
-        firstArg = args[0].lower()
-        if firstArg in [ "--help", "-h", "/?"]:
-            print()
+        firstArgLower = args[0].lower()
+        if firstArgLower in [ "--help", "-h", "/?"]:
             print(f"USAGE: python3 {os.path.basename(__file__)} [OPTIONS]")
             print()
             print(f"Options:")
@@ -292,7 +282,6 @@ def main() -> None:
             print(f"                   Default is \"{SECOPS_SCHEDULE_PATH}\".")
             print(f"--output-dir, -o   Set the output folder path where ICS files will be saved.")
             print(f"                   Default is the current working directory.")
-            print()
             return
     # Read the values for each arg into the variables below.
     # None means not set.
@@ -302,8 +291,9 @@ def main() -> None:
     outputDirectoryPath = None
     i = 0
     while i < len(args):
-        arg = args[i].lower()
-        if arg in [ "--grc-csv", "-g"]:
+        arg = args[i]
+        argLower = arg.lower()
+        if argLower in [ "--grc-csv", "-g"]:
             if grcSchedulePath != None:
                 print("GRC schedule path can only be set once.")
                 return
@@ -312,7 +302,7 @@ def main() -> None:
                 return
             grcSchedulePath = args[i + 1]
             i += 1
-        elif arg in [ "--secops-csv", "-s" ]:
+        elif argLower in [ "--secops-csv", "-s" ]:
             if secopsSchedulePath != None:
                 print("SECOPS schedule path can only be set once.")
                 return
@@ -321,7 +311,7 @@ def main() -> None:
                 return
             secopsSchedulePath = args[i + 1]
             i += 1
-        elif arg in [ "--output-dir", "-o" ]:
+        elif argLower in [ "--output-dir", "-o" ]:
             if outputDirectoryPath != None:
                 print("Output directory path can only be set once.")
                 return
@@ -330,7 +320,7 @@ def main() -> None:
                 return
             outputDirectoryPath = args[i + 1]
             i += 1
-        elif arg in [ "--help", "-h", "/?"]:
+        elif argLower in [ "--help", "-h", "/?"]:
             print(f"Help option cannot be used with other options.")
             return
         else:
@@ -378,7 +368,11 @@ def main() -> None:
         writeTextFile(individualIcsPath, individualIcs)
     # Print goodbye message and quit.
     print(f"Generated main.ics and individual ICS files for {len(names)} students and saved them into {outputDirectoryPath}.")
-    return
 
 if __name__ == "__main__":
-    main()
+    print()
+    try:
+        main()
+    except BaseException as ex:
+        print(f"ERROR: {ex}.")
+    print()
