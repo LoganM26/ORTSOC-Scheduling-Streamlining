@@ -31,7 +31,7 @@ def readTextFile(filePath):
 # input str filePath: A string file path. Can be a relative or rooted file path.
 # input str fileContents: The full contents of the target file.
 # return None
-def writeTextFile(filePath, fileContents: str):
+def writeTextFile(filePath, fileContents):
     filePath = os.path.realpath(os.path.expanduser(filePath))
     with open(filePath, "wb") as file:
         return file.write(fileContents.encode(encoding="UTF-8"))
@@ -254,12 +254,13 @@ def createICSCalendar(components):
 # scheduleToICSCalendar: Builds an ICS calendar out of the ORTSOC schedule.
 # Optionally filters the ICS to only include shifts for a target person by their name.
 # input list[Shift] schedule: An ORTSOC schedule as returned by parseSchedulePhase2.
+# input optional[str] person: The name of a person who's shifts should be in the output ICS. If person == None all shifts are included.
 # return string icsCalendar: A complete ICS calendar ready to be saved to a text file.
-def scheduleToICSCalendar(schedule, targetName=None):
+def scheduleToICSCalendar(schedule, person: str):
     components = []
     components.append(createICSVtimezone())
     for shift in schedule:
-        if targetName != None and shift.name.lower() != targetName.lower():
+        if person != None and shift.name.lower() != person.lower():
             continue
         title = f"{shift.name} (ORTSOC {shift.track})"
         description = f"{shift.name} working {shift.track} at ORTSOC from {timeIndexToHumanTime(shift.startTime)} to {timeIndexToHumanTime(shift.endTime)}."
@@ -278,13 +279,29 @@ def main():
     secopsScheduleCSV = parseCSV(readTextFile(SECOPS_SCHEDULE_PATH))
     secopsSchedule = parseSchedulePhase2(parseSchedulePhase1(secopsScheduleCSV), "SECOPS")
     schedule = grcSchedule + secopsSchedule
-    mainIcs = scheduleToICSCalendar(schedule)
+
+    mainIcs = scheduleToICSCalendar(schedule, None)
     writeTextFile(MAIN_ICS_PATH, mainIcs)
+    print(f"Main ICS calendar written to {MAIN_ICS_PATH}.")
+    
     os.makedirs(INDIVIDUAL_ICS_FOLDER, exist_ok=True)
-    names = set([ shift.name for shift in schedule ])
-    for name in names:
-        individualIcsPath = os.path.join(INDIVIDUAL_ICS_FOLDER, name + ".ics")
-        individualIcs = scheduleToICSCalendar(schedule, name)
-        writeTextFile(individualIcsPath, individualIcs)
+    print("Enter a name to generate an individual ICS calendar. Leave blank to generate for all students.")
+    person = input()
+    if person != "":
+        if not any([ person == shift.name for shift in schedule ]):
+            print(f"No shifts found for {person}. No individual calendar generated.")
+        else:
+            individualIcsPath = os.path.join(INDIVIDUAL_ICS_FOLDER, person + ".ics")
+            individualIcs = scheduleToICSCalendar(schedule, person)
+            writeTextFile(individualIcsPath, individualIcs)
+            print(f"ICS personal calendar for {person} written to {individualIcsPath}")
+    else:
+        names = set([ shift.name for shift in schedule ])
+        for name in names:
+            individualIcsPath = os.path.join(INDIVIDUAL_ICS_FOLDER, name + ".ics")
+            individualIcs = scheduleToICSCalendar(schedule, name)
+            writeTextFile(individualIcsPath, individualIcs)
+        print(f"Individual ICS calendars for all {len(names)} students written into {INDIVIDUAL_ICS_FOLDER}.")
+
 if __name__ == "__main__":
     main()
