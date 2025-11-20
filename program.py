@@ -116,13 +116,15 @@ def createEvent(uid, dtstamp, dtstart, dtend, summary, desc, roleName):
 
 # for adding recurrance put this after DTEND line: RRULE:FREQ=WEEKLY;COUNT=10
 
-def generateICSEvents(schedule, weekStart: date, roleName: str):
+def generateICSEvents(schedule, weekStart: date, roleName: str, person: str):
     events = []
     students = set()
     # Gather all unique students
     for block in schedule:
         students.update(block)
 
+    if person is not None:
+        students = {s for s in students if s == person}
     # for i, block in enumerate(schedule):
     #     if block:
     #         print(f"Block {i} has: {block}")
@@ -206,12 +208,25 @@ def main():
     # for i in range(48 * 7):
     #     print(f"{scheduleTimeToHumanTime(i)}: GRC({", ".join(grcSchedule[i])}) SECOPS({", ".join(secopsSchedule[i])})")
     
-    grcEvents = generateICSEvents(grcSchedule, weekStart, "GRC")
-    secopsEvents = generateICSEvents(secopsSchedule, weekStart, "SECOPS")
+    grcEvents = generateICSEvents(grcSchedule, weekStart, "GRC", None)
+    secopsEvents = generateICSEvents(secopsSchedule, weekStart, "SECOPS", None)
 
     writeICalendar(outputPath, grcEvents + secopsEvents)
 
-    print(f"ICS calendar written to {outputPath}")
+    print(f"ICS master calendar written to {outputPath}")
+
+    personSearch = input("Enter a name to generate personal calendar. Press Enter to skip.\n")
+    if personSearch:
+        personOutputPath = "./" + personSearch + ".ics"
+        personEvents = []
+        personEvents += generateICSEvents(grcSchedule, weekStart, "GRC", personSearch)
+        personEvents += generateICSEvents(secopsSchedule, weekStart, "SECOPS", personSearch)
+
+        if personEvents:
+            writeICalendar(personOutputPath, personEvents)
+            print(f"ICS personal calendar for {personSearch} written to {personOutputPath}")
+        else:
+            print(f"No shifts found for {personSearch}. No individual calendar generated.")
 
 if __name__ == "__main__":
     main()
