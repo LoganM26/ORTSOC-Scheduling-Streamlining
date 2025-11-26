@@ -92,7 +92,7 @@ def humanHourToTimeDelta(humanHour: str) -> timedelta:
 # input datetime dateTime: The time in python datetime format.
 # return str icsDateTime: The time in ICS date time format.
 def dateTimeToICSDateTime(dateTime: datetime) -> str:
-    return "TZID=America/Los_Angeles:" + dateTime.strftime("%Y%m%dT%H%M%S")
+    return dateTime.strftime("%Y%m%dT%H%M%S")
 
 # timeIndexToHumanTime: A shorthand for timeDeltaToHumanTime(timeIndexToTimeDelta(timeIndex)).
 # input int timeIndex: The time in time index format.
@@ -181,9 +181,10 @@ def parseSchedulePhase2(phase1Schedule: list[list[str]], track: str) -> list[Shi
 # input str description: The description of the vevent.
 # input datetime startDateTime: The starting date and time of the vevent.
 # input datetime endDateTime: The ending date and time of the vevent.
+# input str categories: The categories of the vevent.
 # input Optional[str] rrule: Optional repeat rule in string format. Set to None if undesired.
 # return str icsEvent: The created vevent in proper ICS format.
-def createICSEvent(title: str, description: str, startDateTime: datetime, endDateTime: datetime, rrule: Optional[str] = None) -> str:
+def createICSEvent(title: str, description: str, startDateTime: datetime, endDateTime: datetime, categories: str, rrule: Optional[str] = None) -> str:
     # Use a random uuid as the vevent uid so it's globally unique.
     uid = str(uuid.uuid4())
     dtstamp = dateTimeToICSDateTime(datetime.now())
@@ -193,14 +194,17 @@ def createICSEvent(title: str, description: str, startDateTime: datetime, endDat
         f"BEGIN:VEVENT",
         f"UID:{uid}",
         f"DTSTAMP:{dtstamp}",
-        f"DTSTART;{dtstart}",
-        f"DTEND;{dtend}{"\nRRULE:" + rrule if rrule != None else ""}",
+        f"DTSTART;TZID=America/Los_Angeles:{dtstart}",
+        f"DTEND;TZID=America/Los_Angeles:{dtend}",
         f"SUMMARY:{title}",
         f"DESCRIPTION:{description}",
+        f"CATEGORIES:{categories}",
         f"END:VEVENT"
     ]
-    # Lines must be split with "\n".
-    return "".join([line + "\n" for line in lines ])
+    if rrule != None:
+        lines.insert(-1, f"RRULE:{rrule}")
+    # Lines must be split with "\r\n".
+    return "".join([line + "\r\n" for line in lines ])
 
 # createICSVtimezone: Builds an ICS vtimezone for PST.
 # return str icsTimezone: The created vtimezone in proper ICS format.
@@ -222,8 +226,8 @@ def createICSVtimezone() -> str:
         f"END:DAYLIGHT",
         f"END:VTIMEZONE"
     ]
-    # Lines must be split with "\n".
-    return "".join([line + "\n" for line in lines ])
+    # Lines must be split with "\r\n".
+    return "".join([line + "\r\n" for line in lines ])
 
 # createICSCalendar: Builds an ICS calendar by wrapping the provided components.
 # Components can be vevents, vtimezones, and more.
@@ -235,11 +239,11 @@ def createICSCalendar(components: list[str]) -> str:
         f"VERSION:2.0",
         f"PRODID:-//ORTSOC//ORTSOC-Scheduling-Streamlining//EN"
     ]
-    header = "".join([line + "\n" for line in headerLines ])
+    header = "".join([line + "\r\n" for line in headerLines ])
     footerLines = [
         f"END:VCALENDAR"
     ]
-    footer = "".join([line + "\n" for line in footerLines ])
+    footer = "".join([line + "\r\n" for line in footerLines ])
     componentsPayload = "".join(components)
     return header + componentsPayload + footer
 
@@ -255,10 +259,11 @@ def scheduleToICSCalendar(schedule: list[Shift], name: Optional[str] = None) -> 
         if name != None and shift.name.lower() != name.lower():
             continue
         title = f"{shift.name} (ORTSOC {shift.track})"
-        description = f"{shift.name} working {shift.track} at ORTSOC from {timeIndexToHumanTime(shift.startTime)} to {timeIndexToHumanTime(shift.endTime)}."
+        description = f"{shift.track} shift for {shift.name}"
         startDateTime = START_DATE + timeIndexToTimeDelta(shift.startTime)
         endDateTime = START_DATE + timeIndexToTimeDelta(shift.endTime)
-        components.append(createICSEvent(title, description, startDateTime, endDateTime, "FREQ=WEEKLY;COUNT=10"))
+        categories = shift.track
+        components.append(createICSEvent(title, description, startDateTime, endDateTime, categories, "FREQ=WEEKLY;COUNT=10"))
     return createICSCalendar(components)
 
 # Other notes:
