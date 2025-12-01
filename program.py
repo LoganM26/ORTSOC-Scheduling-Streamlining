@@ -334,9 +334,23 @@ def main() -> None:
         i += 1
     # Set any variables to their defaults if they are currently not set.
     if grcSchedulePath == None:
-        grcSchedulePath = GRC_SCHEDULE_PATH
+        potentialGrcSchedulePaths = [ file_path for file_path in os.listdir(".")
+                                      if os.path.isfile(file_path)
+                                      and file_path.lower().endswith(".csv")
+                                      and "grc" in file_path.lower() ]
+        if len(potentialGrcSchedulePaths) == 1:
+            grcSchedulePath = potentialGrcSchedulePaths[0]
+        else:
+            grcSchedulePath = GRC_SCHEDULE_PATH
     if secopsSchedulePath == None:
-        secopsSchedulePath = SECOPS_SCHEDULE_PATH
+        potentialSecopsSchedulePaths = [ file_path for file_path in os.listdir(".")
+                                      if os.path.isfile(file_path)
+                                      and file_path.lower().endswith(".csv")
+                                      and "secops" in file_path.lower() ]
+        if len(potentialSecopsSchedulePaths) == 1:
+            secopsSchedulePath = potentialSecopsSchedulePaths[0]
+        else:
+            secopsSchedulePath = SECOPS_SCHEDULE_PATH
     if outputDirectoryPath == None:
         outputDirectoryPath = OUTPUT_DIRECTORY_PATH
     # Ensure all variables are rooted full paths.
@@ -354,30 +368,31 @@ def main() -> None:
         print(f"Directory {outputDirectoryPath} does not exist.")
         return
     # Load GRC and SECOPS schedules from CSV.
+    print(f"Loading GRC schedule from \"{grcSchedulePath}\".")
     grcScheduleCSV = parseCSV(readTextFile(grcSchedulePath))
     grcSchedule = parseSchedulePhase2(parseSchedulePhase1(grcScheduleCSV), "GRC")
+    print(f"Loading SECOPS schedule from \"{secopsSchedulePath}\".")
     secopsScheduleCSV = parseCSV(readTextFile(secopsSchedulePath))
     secopsSchedule = parseSchedulePhase2(parseSchedulePhase1(secopsScheduleCSV), "SECOPS")
-    # Generate and save main ISC file.
-    mainSchedule = grcSchedule + secopsSchedule
-    mainIcs = scheduleToICSCalendar(mainSchedule, None)
-    mainIcsPath = os.path.join(outputDirectoryPath, "main.ics")
-    writeTextFile(mainIcsPath, mainIcs)
+    # Generate and save master ISC file.
+    masterIcsPath = os.path.join(outputDirectoryPath, "master.ics")
+    print(f"Generating master schedule in \"{masterIcsPath}\".")
+    masterSchedule = grcSchedule + secopsSchedule
+    masterIcs = scheduleToICSCalendar(masterSchedule, None)
+    writeTextFile(masterIcsPath, masterIcs)
     # Generate and save individual ICS files.
-    names = set([ shift.name for shift in mainSchedule ])
     individualIcsFolder = os.path.join(outputDirectoryPath, "individual")
+    names = set([ shift.name for shift in masterSchedule ])
+    print(f"Generating {len(names)} individual schedules in \"{individualIcsFolder}\".")
     os.makedirs(individualIcsFolder, exist_ok=True)
     for name in names:
-        individualIcs = scheduleToICSCalendar(mainSchedule, name)
+        individualIcs = scheduleToICSCalendar(masterSchedule, name)
         individualIcsPath = os.path.join(individualIcsFolder, name + ".ics")
         writeTextFile(individualIcsPath, individualIcs)
     # Print goodbye message and quit.
-    print(f"Generated main.ics and individual ICS files for {len(names)} students and saved them into {outputDirectoryPath}.")
+    print(f"All tasks completed successfully.")
 
 if __name__ == "__main__":
     print()
-    try:
-        main()
-    except BaseException as ex:
-        print(f"ERROR: {ex}.")
+    main()
     print()
