@@ -1,1 +1,4 @@
-main.ics
+individual/*
+*.ics
+*.ics~
+*.backup
